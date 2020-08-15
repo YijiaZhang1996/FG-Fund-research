@@ -2,12 +2,14 @@
 #To run this script, you need to install and library package "WindR" first
 
 #Define fundemental variables
-fund_code<-c("000940.OF","002692.OF","001071.OF")
+t1<-proc.time()
+
+fund_code<-c("000940.OF","002692.OF","006751.OF","257070.OF","001513.OF","320007.OF","007490.OF","001071.OF",
+             "519674.OF","000697.OF","519772.OF","000404.OF","110013.OF","002939.OF","610002.OF")
+
 bench_index<-"000998.SH"
 r_f<-0.015
-start_date_series<-c("2017-01-01","2018-01-01","2019-01-01","2020-01-01")
-end_date_series<-c("2017-12-31","2018-12-31","2019-12-31","2020-06-30")
-result_list<-data.frame(matrix(NA, ncol=7, nrow = 0))
+result_list<-data.frame(matrix(NA, ncol=8, nrow = 0))
 
 #get interval return rate
 function_interval_return_rate_fund<-function(fund_code,start_date_series,end_date_series){
@@ -42,9 +44,11 @@ function_calculate_beta<-function(daily_return_rate_fund,daily_return_rate_bench
 }
 
 # calculate info ratio
-function_info_ratio<-function(daily_return_rate_fund,daily_return_rate_bench){
+function_info_ratio<-function(interval_return_rate_fund,interval_return_rate_bench,daily_return_rate_fund,daily_return_rate_bench){
   daily_excess_return<-daily_return_rate_fund-daily_return_rate_bench
-  info_ratio<-(250)^(1/2)*mean(daily_excess_return)/sd(daily_excess_return)
+  info_ratio<-(interval_return_rate_fund-interval_return_rate_bench)/((250)^(1/2)*sd(daily_excess_return))
+  # info_ratio<-(250)^(1/2)*mean(daily_excess_return)/sd(daily_excess_return)
+
   return(info_ratio)
 }
 
@@ -68,8 +72,28 @@ function_maxdownside<-function(fund_code,start_date_series,end_date_series){
   }
 
 for (j in 1:length(fund_code)){
-  result_list_single<-data.frame(matrix(NA, ncol=7, nrow = 0))
+  
+  result_list_single<-data.frame(matrix(NA, ncol=8, nrow = 0)) ### ncol is number of index in result list
+
+  # 如果成立日=基金经理接管日：起始日用赎回开始日
+  # 如果成立日≠基金经理接管日：起始日用基金经理接管日
+  
+  fund_redmstart_date<-as.Date(w.wss(fund_code[j],'fund_redmstartdate')$Data$FUND_REDMSTARTDATE,origin="1899-12-30")
+  manager_start_date<-as.Date(w.wss(fund_code[j],'fund_manager_startdate','order=1')$Data$FUND_MANAGER_STARTDATE,origin="1899-12-30")
+  fund_setup_date<-w_wss_data<-as.Date(w.wss(fund_code[j],'fund_setupdate')$Data$FUND_SETUPDATE,origin="1899-12-30")
+  
+  if(fund_setup_date==manager_start_date){
+    start_date_series<-c(fund_redmstart_date,w.tdays(fund_redmstart_date,"20191231","Period=Y;Days=Alldays")$Data$DATETIME+1)
+    end_date_series<-w.tdays(fund_redmstart_date,"20200630","Period=Y;Days=Alldays")$Data$DATETIME
+  }
+  else{
+    start_date_series<-c(manager_start_date,w.tdays(manager_start_date,"20191231","Period=Y;Days=Alldays")$Data$DATETIME+1)
+    end_date_series<-w.tdays(manager_start_date,"20200630","Period=Y;Days=Alldays")$Data$DATETIME
+  }
+  
+
   for (i in 1:length(end_date_series)) {
+    
     interval_return_rate_fund<-function_interval_return_rate_fund(fund_code[j],start_date_series[i],end_date_series[i])
     interval_return_rate_bench<-function_interval_return_rate_bench(bench_index,start_date_series[i],end_date_series[i])
     daily_return_rate_fund<-function_daily_return_rate_fund(fund_code[j],start_date_series[i],end_date_series[i])
@@ -77,7 +101,7 @@ for (j in 1:length(fund_code)){
     
     beta<-function_calculate_beta(daily_return_rate_fund,daily_return_rate_bench)
     
-    info_ratio<-function_info_ratio(daily_return_rate_fund,daily_return_rate_bench)
+    info_ratio<-function_info_ratio(interval_return_rate_fund,interval_return_rate_bench,daily_return_rate_fund,daily_return_rate_bench)
     
     Treynor_ratio<-function_Treynor_ratio(interval_return_rate_fund,r_f,beta)
 
@@ -86,18 +110,21 @@ for (j in 1:length(fund_code)){
     maxdownside<-function_maxdownside(fund_code[j],start_date_series[i],end_date_series[i])
     
     result_list_single[i,1]<-fund_code[j]
-    result_list_single[i,2]<-start_date_series[i]
-    result_list_single[i,3]<-end_date_series[i]
-    result_list_single[i,4]<-info_ratio
-    result_list_single[i,5]<-Treynor_ratio
-    result_list_single[i,6]<-Jensen_ratio
-    result_list_single[i,7]<-maxdownside
+    result_list_single[i,2]<-(fund_setup_date==manager_start_date)
+    result_list_single[i,3]<-as.character(start_date_series[i])
+    result_list_single[i,4]<-as.character(end_date_series[i])
+    result_list_single[i,5]<-info_ratio
+    result_list_single[i,6]<-Treynor_ratio
+    result_list_single[i,7]<-Jensen_ratio
+    result_list_single[i,8]<-maxdownside
   }
   result_list<-rbind(result_list,result_list_single)
 }
-names(result_list)<-c("product code","start date","end date","Info ratio","Treynor","Jensen","Maxdownside")
+names(result_list)<-c("product code","setupdate equals to manager startdate","start date",
+                      "end date","Info ratio","Treynor","Jensen","Maxdownside")
 write.csv(result_list, "risk_index_result_list.csv")
 
-
-
+t2<-proc.time()
+t<-t2-t1
+print(paste0('Total running time：',t[3][[1]],'s'))
 
